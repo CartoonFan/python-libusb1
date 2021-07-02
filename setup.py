@@ -1,4 +1,4 @@
-# Copyright (C) 2010-2018  Vincent Pelletier <plr.vincent@gmail.com>
+# Copyright (C) 2010-2021  Vincent Pelletier <plr.vincent@gmail.com>
 #
 # This library is free software; you can redistribute it and/or
 # modify it under the terms of the GNU Lesser General Public
@@ -14,11 +14,10 @@
 # License along with this library; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 from __future__ import print_function
+from setuptools import find_packages
 from setuptools import setup
 from setuptools import Command
-import setuptools.command.install
 from codecs import open
-import errno
 import hashlib
 import os
 import subprocess
@@ -41,23 +40,22 @@ if os.getenv('I_KNOW_HOW_TO_RELEASE_PYTHON_LIBUSB1') != '1' and any(
     sys.exit(1)
 
 CURRENT_WINDOWS_7Z_SHA256 = (
-    'd3087e7d09ec4e463f5f4b394dcfec0b90e835545318af1a75575de59d2dfaac'
+    '620cec4dbe4868202949294157da5adb75c9fbb4f04266146fc833eef85f90fb'
 )
 
 cmdclass = versioneer.get_cmdclass()
-class install(setuptools.command.install.install):
-    def run(self):
-        # XXX: setuptools.command.install.install is an old-style class on
-        # python2.7 :(
-        setuptools.command.install.install.run(self)
-        if os.getenv('LIBUSB_BINARY'):
-            self.copy_file(
-                os.getenv('LIBUSB_BINARY'),
-                os.path.join(self.install_lib, 'usb1'),
-            )
-cmdclass['install'] = install
-
 class upload(Command):
+    """
+    Declaw "setup.py upload".
+    """
+    user_options = []
+
+    def initialize_options(self):
+        pass
+
+    def finalize_options(self):
+        pass
+
     def run(self):
         print('This project uses signed releases. See KEYS for instructions.')
         print('Hint:')
@@ -98,30 +96,48 @@ class update_libusb(Command):
         url = finder.found
         if url is None:
             raise ValueError('Failed to locate current windows binary release')
+        if not url.endswith('.7z'):
+            raise ValueError('unexpected extension: %r' % (url, ))
         build_dir = os.path.join(os.path.dirname(__file__), 'build')
         download_cache_path = os.path.join(build_dir, 'download-cache')
-        archive_path = os.path.join(
-            download_cache_path,
-            urlsplit(url).path.rsplit('/', 1)[-1],
-        )
-        if not os.path.exists(archive_path):
+        if not os.path.exists(download_cache_path):
             os.makedirs(download_cache_path)
-            with open(archive_path, 'wb') as archive_file:
-                archive_file.write(urlopen(url).read())
-        with open(archive_path, 'rb') as archive_file:
-            archive_sha256 = hashlib.sha256(archive_file.read()).hexdigest()
-        if archive_sha256 != CURRENT_WINDOWS_7Z_SHA256:
-            raise ValueError(
-                'Windows release sha56 mismatch: %r fetched with a sha256 of %r' % (
-                    url,
-                    archive_sha256,
-                )
-            )
+        url_basename = urlsplit(url).path.rsplit('/', 1)[-1]
+        archive_path = os.path.join(download_cache_path, url_basename)
+        if not os.path.exists(archive_path):
+            for suffix in ('', '.asc'):
+                with open(archive_path + suffix, 'wb') as archive_file:
+                    archive_file.write(urlopen(url + suffix).read())
         # py2 does not have subprocess.DEVNULL.
         with open(os.devnull, 'wb') as devnull:
+            # to build/update trustedkeys-libusb.kbx:
+            # gpg --no-default-keyring --keyring trustedkeys-libusb.kbx --receive-keys ...
+            subprocess.check_call(
+                [
+                    'gpgv',
+                    '--keyring', 'trustedkeys-libusb.kbx',
+                    archive_path + '.asc', archive_path,
+                ],
+                # gnupg will not shut its pie hole.
+                stderr=devnull,
+                close_fds=True,
+            )
+            # This check is for the maintainer to notice a new release, and
+            # to retrospectively confirm that a release was done with files
+            # from a certain archive (and not just any signed release).
+            # It is *not* to check file authenticity (for this, we have gpg).
+            with open(archive_path, 'rb') as archive_file:
+                archive_sha256 = hashlib.sha256(archive_file.read()).hexdigest()
+            if archive_sha256 != CURRENT_WINDOWS_7Z_SHA256:
+                raise ValueError(
+                    'Windows release sha56 mismatch: %r fetched with a sha256 of %r' % (
+                        url,
+                        archive_sha256,
+                    )
+                )
             for arch_path, out_dir in (
-                ('MS32/dll/libusb-1.0.dll', os.path.join(build_dir, 'win32')),
-                ('MS64/dll/libusb-1.0.dll', os.path.join(build_dir, 'win_amd64')),
+                ('VS2019/MS32/dll/libusb-1.0.dll', os.path.join(build_dir, 'win32')),
+                ('VS2019/MS64/dll/libusb-1.0.dll', os.path.join(build_dir, 'win_amd64')),
             ):
                 subprocess.check_call(
                     [
@@ -154,7 +170,15 @@ setup(
     license='LGPLv2.1+',
     platforms=['any'],
     py_modules=['libusb1'],
-    packages=['usb1'],
+    packages=find_packages(),
+    package_data={
+        "usb1": ["libusb-1.0.dll"],
+    },
+    entry_points={
+        'pyinstaller40': [
+            'hook-dirs=usb1.__pyinstaller:get_hook_dirs',
+            'tests=usb1.__pyinstaller:get_PyInstaller_tests']
+    },
     classifiers=[
         'Intended Audience :: Developers',
         'License :: OSI Approved :: GNU Lesser General Public License v2 or later (LGPLv2+)',
@@ -170,9 +194,11 @@ setup(
         'Topic :: Software Development :: Libraries',
         'Topic :: System :: Hardware :: Hardware Drivers',
     ],
-    setup_requires=[
-        'wheel',
-    ],
+    setup_requires=(
+        ['wheel']
+        if 'bdist_wheel' in sys.argv else
+        []
+    ),
     use_2to3=True,
     test_suite='usb1.testUSB1',
 )

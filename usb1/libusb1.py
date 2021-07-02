@@ -1,4 +1,4 @@
-# Copyright (C) 2010-2018  Vincent Pelletier <plr.vincent@gmail.com>
+# Copyright (C) 2010-2021  Vincent Pelletier <plr.vincent@gmail.com>
 #
 # This library is free software; you can redistribute it and/or
 # modify it under the terms of the GNU Lesser General Public
@@ -169,6 +169,8 @@ def _loadLibrary():
                     '/opt/local/lib/libusb-1.0.dylib',
                     # fink standard path
                     '/sw/lib/libusb-1.0.dylib',
+                    # homebrew standard path for symlink (Apple M1 Silicon)
+                    '/opt/homebrew/opt/libusb/lib/libusb-1.0.dylib',
                 ):
                 if os.path.exists(libusb_path):
                     break

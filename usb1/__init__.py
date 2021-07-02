@@ -1,4 +1,4 @@
-# Copyright (C) 2010-2018  Vincent Pelletier <plr.vincent@gmail.com>
+# Copyright (C) 2010-2021  Vincent Pelletier <plr.vincent@gmail.com>
 #
 # This library is free software; you can redistribute it and/or
 # modify it under the terms of the GNU Lesser General Public
@@ -2078,7 +2078,7 @@ class USBContext(object):
                 with self.__context_cond:
                     self.__context_refcount -= 1
                     if not self.__context_refcount:
-                        self.__context_cond.notifyAll()
+                        self.__context_cond.notify_all()
         if inspect.isgeneratorfunction(func):
             def wrapper(self, *args, **kw):
                 with refcount(self):
@@ -2156,7 +2156,7 @@ class USBContext(object):
                 self.__context_cond.wait()
             self._exit()
         finally:
-            self.__context_cond.notifyAll()
+            self.__context_cond.notify_all()
             self.__context_cond.release()
 
     def _exit(self):
